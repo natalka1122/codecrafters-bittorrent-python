@@ -45,6 +45,8 @@ class Bencode(ABC, Generic[T]):  # noqa: WPS214
             return Integer.from_bytes(raw_bytes)
         if raw_bytes[0:1] == const.LIST_START:
             return List.from_bytes(raw_bytes)
+        if raw_bytes[0:1] == const.DICT_START:
+            return Dict.from_bytes(raw_bytes)
         if chr(raw_bytes[0]).isdigit():
             return String.from_bytes(raw_bytes)
         raise WrongBencodeFormatError(f"Bencode.from_bytes(): raw_bytes = {raw_bytes!r}")
@@ -167,3 +169,46 @@ class List(Bencode[list[Bencode[Any]]]):
         for elem in self.data:
             result += elem.to_bytes
         return result + const.BENCODE_END
+
+
+class Dict(Bencode[dict[str, Bencode[Any]]]):
+    @property
+    def name(self) -> str:
+        return "Dict"
+
+    @property
+    def data_type(self) -> Type[dict[str, Bencode[Any]]]:
+        return dict
+
+    @property
+    def to_string(self) -> str:
+        result: list[str] = []
+        for key in sorted(self.data):
+            result.append(f'"{key}":{self.data[key].to_string}')
+        return "{" + ",".join(result) + "}"
+
+    @classmethod
+    def from_bytes(cls, raw_bytes: bytes) -> tuple[bytes, "Dict"]:
+        if len(raw_bytes) < 2:
+            raise NeedMoreBytesError
+        if raw_bytes[0:1] != const.LIST_START:
+            raise WrongBencodeFormatError(f"List.from_bytes(): raw_bytes = {raw_bytes!r}")
+
+        raw_bytes = raw_bytes[1:]
+        result: dict[str, Bencode[Any]] = {}
+        while len(raw_bytes) > 1 and raw_bytes[0:1] != const.BENCODE_END:
+            raw_bytes, key = String.from_bytes(raw_bytes)
+            raw_bytes, value = Bencode.from_bytes(raw_bytes)
+            result[key.data.decode()] = value
+        if len(raw_bytes) < 1:
+            raise NeedMoreBytesError
+        if raw_bytes[0:1] != const.BENCODE_END:
+            raise WrongBencodeFormatError(f"List.from_bytes(): raw_bytes = {raw_bytes!r}")
+        return raw_bytes[1:], Dict(result)
+
+    def _to_bytes(self) -> bytes:
+        result: list[bytes] = []
+        for key, value in self.data.items():
+            result.append(key.encode())
+            result.append(value.to_bytes)
+        return const.DICT_START + b"".join(result) + const.BENCODE_END
