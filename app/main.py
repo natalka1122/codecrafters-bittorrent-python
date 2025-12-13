@@ -4,12 +4,17 @@ import sys
 from typing import Any, Optional
 
 from app.bencode import Bencode, Dict, Integer, String
-from app.const import Command
+from app.const import PIECE_SIZE, Command
 from app.logging_config import get_logger, setup_logging
 
 setup_logging(level="DEBUG", console_logs_target=sys.stderr)
 
 logger = get_logger(__name__)
+
+
+def _hex(number: int) -> str:
+    result = hex(number)[2:]
+    return "0" * (2 - len(result)) + result
 
 
 def decode_bencode(bencode_bytes: bytes) -> str:
@@ -43,12 +48,28 @@ def show_info(filename: str) -> str:
     if not isinstance(length, Integer):
         logger.error(f"type(length) = {type(length)}")
         raise NotImplementedError
+    piece_length: Optional[Bencode[Any]] = info.data.get("piece length")
+    if not isinstance(piece_length, Integer):
+        logger.error(f"type(piece_length) = {type(piece_length)}")
+        raise NotImplementedError
     info_hash = hashlib.sha1(info.to_bytes).hexdigest()
     result: list[str] = [
         f"Tracker URL: {announce.data.decode()}",
         f"Length: {length.data}",
         f"Info Hash: {info_hash}",
+        f"Piece Length: {piece_length.data}",
+        "Piece Hashes:",
     ]
+    pieces: Optional[Bencode[Any]] = info.data.get("pieces")
+    if not isinstance(pieces, String):
+        logger.error(f"type(piece_length) = {type(pieces)}")
+        raise NotImplementedError
+    index = 0
+    logger.debug(pieces.data)
+    while index < len(pieces.data):
+        current: str = "".join(map(_hex, pieces.data[index : index + PIECE_SIZE]))
+        result.append(current)
+        index += PIECE_SIZE
     return "\n".join(result)
 
 

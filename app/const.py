@@ -12,3 +12,5 @@ INTEGER_START = b"i"
 LIST_START = b"l"
 DICT_START = b"d"
 BENCODE_END = b"e"
+
+PIECE_SIZE = 20
