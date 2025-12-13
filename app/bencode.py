@@ -66,7 +66,11 @@ class String(Bencode[bytes]):
 
     @property
     def to_string(self) -> str:
-        return f'"{self.data.decode()}"'
+        try:
+            line = self.data.decode()
+        except UnicodeDecodeError:
+            line = "UnicodeDecodeError"
+        return f'"{line}"'
 
     @classmethod
     def from_bytes(cls, raw_bytes: bytes) -> tuple[bytes, "String"]:
