@@ -22,7 +22,8 @@ def decode_bencode(bencode_bytes: bytes) -> str:
 
 def show_info(filename: str) -> str:
     with open(filename, "rb") as file:
-        remainder, content = Bencode.from_bytes(file.read())
+        content_bytes = file.read()
+    remainder, content = Bencode.from_bytes(content_bytes)
     if len(remainder) > 0:
         logger.info(f"remainder = {remainder!r}")
         raise NotImplementedError

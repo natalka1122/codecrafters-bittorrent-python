@@ -213,6 +213,6 @@ class Dict(Bencode[dict[str, Bencode[Any]]]):
     def _to_bytes(self) -> bytes:
         result: list[bytes] = []
         for key, value in self.data.items():
-            result.append(key.encode())
+            result.append(String(key.encode()).to_bytes)
             result.append(value.to_bytes)
         return const.DICT_START + b"".join(result) + const.BENCODE_END
