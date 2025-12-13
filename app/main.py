@@ -10,7 +10,14 @@ logger = get_logger(__name__)
 
 
 def decode_bencode(bencoded_value: bytes) -> bytes:
-    if chr(bencoded_value[0]).isdigit():
+    if bencoded_value[0] == ord("i"):
+        result = b""
+        index = 1
+        while index < len(bencoded_value) and bencoded_value[index] != ord("e"):
+            result += bencoded_value[index : index + 1]
+            index += 1
+        return result
+    elif chr(bencoded_value[0]).isdigit():
         first_colon_index = bencoded_value.find(b":")
         if first_colon_index == -1:
             raise ValueError("Invalid encoded value")
