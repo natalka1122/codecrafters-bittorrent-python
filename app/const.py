@@ -14,3 +14,4 @@ DICT_START = b"d"
 BENCODE_END = b"e"
 
 PIECE_SIZE = 20
+PEER_SIZE = 6

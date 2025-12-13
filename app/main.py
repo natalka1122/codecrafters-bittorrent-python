@@ -1,11 +1,13 @@
 import argparse
-import hashlib
 import sys
-from typing import Any, Optional
+from typing import Any
 
-from app.bencode import Bencode, Dict, Integer, String
-from app.const import PIECE_SIZE, Command
+import requests
+
+from app.bencode import Bencode, Dict, String
+from app.const import PEER_SIZE, PIECE_SIZE, Command
 from app.logging_config import get_logger, setup_logging
+from app.torrent_file import TorrentFile
 
 setup_logging(level="DEBUG", console_logs_target=sys.stderr)
 
@@ -17,10 +19,24 @@ def _hex(number: int) -> str:
     return "0" * (2 - len(result)) + result
 
 
+def _fetch(url: str, params: dict[str, Any]) -> bytes:
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    return r.content
+
+
+def _make_ip(raw_data: bytes) -> str:
+    if len(raw_data) != 6:
+        logger.error(f"raw_data = {len(raw_data)} {raw_data!r}")
+        raise NotImplementedError
+    result = ".".join(map(str, raw_data[:4]))
+    return result + ":" + str(int.from_bytes(raw_data[4:]))
+
+
 def decode_bencode(bencode_bytes: bytes) -> str:
     remainder, bencode = Bencode.from_bytes(bencode_bytes)
     if len(remainder) > 0:
-        logger.info(f"remainder = {remainder!r}")
+        logger.error(f"remainder = {remainder!r}")
         raise NotImplementedError
     return bencode.to_string
 
@@ -28,48 +44,55 @@ def decode_bencode(bencode_bytes: bytes) -> str:
 def show_info(filename: str) -> str:
     with open(filename, "rb") as file:
         content_bytes = file.read()
-    remainder, content = Bencode.from_bytes(content_bytes)
+    torrent_file = TorrentFile.from_bytes(content_bytes)
+    result: list[str] = [
+        f"Tracker URL: {torrent_file.announce}",
+        f"Length: {torrent_file.length}",
+        f"Info Hash: {torrent_file.info_hash_hex}",
+        f"Piece Length: {torrent_file.piece_length}",
+        "Piece Hashes:",
+    ]
+    pieces: bytes = torrent_file.pieces
+    index = 0
+    logger.debug(pieces)
+    while index < len(pieces):
+        current: str = "".join(map(_hex, pieces[index : index + PIECE_SIZE]))
+        result.append(current)
+        index += PIECE_SIZE
+    return "\n".join(result)
+
+
+def show_peers(filename: str) -> str:
+    with open(filename, "rb") as file:
+        content_bytes = file.read()
+    torrent_file = TorrentFile.from_bytes(content_bytes)
+    params: dict[str, Any] = {
+        "info_hash": torrent_file.info_hash,
+        "peer_id": b"natalka112natalka112",
+        "port": 6881,
+        "uploaded": 0,
+        "downloaded": 0,
+        "left": torrent_file.length,
+        "compact": 1,
+    }
+    remainder, response = Bencode.from_bytes(_fetch(torrent_file.announce, params=params))
     if len(remainder) > 0:
         logger.info(f"remainder = {remainder!r}")
         raise NotImplementedError
-    logger.info(f"content = {content}")
-    if not isinstance(content, Dict):
-        logger.error(f"type(content) = {type(content)}")
+    logger.info(f"response = {response}")
+    if not isinstance(response, Dict):
+        logger.error(f"type(response) = {type(response)}")
         raise NotImplementedError
-    announce: Optional[Bencode[Any]] = content.data.get("announce")
-    if not isinstance(announce, String):
-        logger.error(f"type(announce) = {type(announce)}")
+    peers = response.data.get("peers")
+    if not isinstance(peers, String):
+        logger.error(f"type(peers) = {type(peers)}")
         raise NotImplementedError
-    info: Optional[Bencode[Any]] = content.data.get("info")
-    if not isinstance(info, Dict):
-        logger.error(f"type(info) = {type(info)}")
-        raise NotImplementedError
-    length: Optional[Bencode[Any]] = info.data.get("length")
-    if not isinstance(length, Integer):
-        logger.error(f"type(length) = {type(length)}")
-        raise NotImplementedError
-    piece_length: Optional[Bencode[Any]] = info.data.get("piece length")
-    if not isinstance(piece_length, Integer):
-        logger.error(f"type(piece_length) = {type(piece_length)}")
-        raise NotImplementedError
-    info_hash = hashlib.sha1(info.to_bytes).hexdigest()
-    result: list[str] = [
-        f"Tracker URL: {announce.data.decode()}",
-        f"Length: {length.data}",
-        f"Info Hash: {info_hash}",
-        f"Piece Length: {piece_length.data}",
-        "Piece Hashes:",
-    ]
-    pieces: Optional[Bencode[Any]] = info.data.get("pieces")
-    if not isinstance(pieces, String):
-        logger.error(f"type(piece_length) = {type(pieces)}")
-        raise NotImplementedError
+    result: list[str] = []
     index = 0
-    logger.debug(pieces.data)
-    while index < len(pieces.data):
-        current: str = "".join(map(_hex, pieces.data[index : index + PIECE_SIZE]))
+    while index < len(peers.data):
+        current: str = _make_ip(peers.data[index : index + PEER_SIZE])
         result.append(current)
-        index += PIECE_SIZE
+        index += PEER_SIZE
     return "\n".join(result)
 
 
@@ -78,9 +101,9 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparser = subparsers.add_parser(Command.DECODE, help="Decode a given string")
     subparser.add_argument("string", help="String to work with")
-    subparser = subparsers.add_parser(
-        Command.INFO, help=" print information about the torrent file"
-    )
+    subparser = subparsers.add_parser(Command.INFO, help="Print information about the torrent file")
+    subparser.add_argument("torrent_file", help="Torrent file to work with")
+    subparser = subparsers.add_parser(Command.PEERS, help="Discover peers")
     subparser.add_argument("torrent_file", help="Torrent file to work with")
     return parser.parse_args()
 
@@ -92,6 +115,8 @@ def main() -> None:
             result = decode_bencode(args.string.encode())
         case Command.INFO:
             result = show_info(args.torrent_file)
+        case Command.PEERS:
+            result = show_peers(args.torrent_file)
         case _:
             logger.error(f"Not implemented command = {args.command}")
             return
