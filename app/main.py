@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import sys
 from typing import Any, Optional
 
@@ -41,7 +42,12 @@ def show_info(filename: str) -> str:
     if not isinstance(length, Integer):
         logger.error(f"type(length) = {type(length)}")
         raise NotImplementedError
-    result: list[str] = [f"Tracker URL: {announce.data.decode()}", f"Length: {length.data}"]
+    info_hash = hashlib.sha1(info.to_bytes).hexdigest()
+    result: list[str] = [
+        f"Tracker URL: {announce.data.decode()}",
+        f"Length: {length.data}",
+        f"Info Hash: {info_hash}",
+    ]
     return "\n".join(result)
 
 
