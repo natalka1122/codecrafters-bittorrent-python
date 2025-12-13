@@ -191,7 +191,7 @@ class Dict(Bencode[dict[str, Bencode[Any]]]):
     def from_bytes(cls, raw_bytes: bytes) -> tuple[bytes, "Dict"]:
         if len(raw_bytes) < 2:
             raise NeedMoreBytesError
-        if raw_bytes[0:1] != const.LIST_START:
+        if raw_bytes[0:1] != const.DICT_START:
             raise WrongBencodeFormatError(f"List.from_bytes(): raw_bytes = {raw_bytes!r}")
 
         raw_bytes = raw_bytes[1:]
