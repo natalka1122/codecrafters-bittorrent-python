@@ -32,7 +32,7 @@ class TorrentFile:
     info: Dict
     length: int
     piece_length: int
-    pieces: list[bytes]
+    piece_hashes: list[bytes]
 
     # no async since no parallel processes exist yet
     def get_peers(self) -> list[tuple[str, int]]:  # noqa: WPS210
@@ -101,7 +101,7 @@ class TorrentFile:
             logger.error(f"type(piece_length) = {type(pieces_bencode)}")
             raise NotImplementedError
         pieces_bytes = pieces_bencode.data
-        pieces: list[bytes] = [
+        piece_hashes: list[bytes] = [
             pieces_bytes[i : i + PIECE_SIZE]
             for i in range(0, len(pieces_bytes), PIECE_SIZE)  # noqa: WPS221
         ]
@@ -110,5 +110,5 @@ class TorrentFile:
             info=info,
             length=length.data,
             piece_length=piece_length.data,
-            pieces=pieces,
+            piece_hashes=piece_hashes,
         )

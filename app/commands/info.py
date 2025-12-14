@@ -16,5 +16,5 @@ def print_info(filename: str) -> str:
         f"Piece Length: {torrent_file.piece_length}",
         "Piece Hashes:",
     ]
-    result += list(map(hex20, torrent_file.pieces))
+    result += list(map(hex20, torrent_file.piece_hashes))
     return "\n".join(result)

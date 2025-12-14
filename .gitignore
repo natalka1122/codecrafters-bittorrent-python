@@ -175,4 +175,4 @@ cython_debug/
 
 logs/
 play/
-loopback.pcap
+*.pcap

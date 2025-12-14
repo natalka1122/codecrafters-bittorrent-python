@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -e
 
-INTERFACE="${1:-loopback}"
+# INTERFACE="${1:-loopback}"
+INTERFACE="${1:-eth0}"
 
 sudo rm -rf $INTERFACE.pcap || true
 echo "Starting tcpdump on $INTERFACE"

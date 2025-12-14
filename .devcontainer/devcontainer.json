@@ -48,7 +48,9 @@
                     "scminput": false
                 },
                 "python.analysis.typeCheckingMode": "strict",
-                "python.defaultInterpreterPath": "/workspaces/codecrafters-bittorrent-python/.venv/bin/python"
+                "python.defaultInterpreterPath": "/workspaces/codecrafters-bittorrent-python/.venv/bin/python",
+                "terminal.integrated.suggest.cdPath": "absolute",
+                "files.eol": "\n"
             }
         }
     }

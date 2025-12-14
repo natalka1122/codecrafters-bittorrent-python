@@ -1,4 +1,5 @@
-from enum import IntEnum, StrEnum
+from enum import IntEnum, StrEnum, auto
+from typing import Awaitable, Callable
 
 
 class Command(StrEnum):
@@ -16,6 +17,7 @@ class Command(StrEnum):
 
 
 class MessageType(IntEnum):
+    KEEPALIVE = auto()
     CHOKE = 0
     UNCHOKE = 1
     INTERESTED = 2
@@ -28,6 +30,7 @@ class MessageType(IntEnum):
 
 
 MY_ID = b"natalka112natalka112"
+BITTORENT_PROTOCOL = b"BitTorrent protocol"
 STRING_DELIMITER = b":"
 INTEGER_START = b"i"
 LIST_START = b"l"
@@ -37,3 +40,6 @@ BENCODE_END = b"e"
 PIECE_SIZE = 20
 PEER_SIZE = 6
 BLOCK_SIZE = 16 * 1024
+WINDOW_SIZE = 10
+
+StreamExactly = Callable[[int], Awaitable[bytes]]
