@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 
 
 class Command(StrEnum):
@@ -15,6 +15,18 @@ class Command(StrEnum):
     MAGNET_DOWNLOADE = "magnet_download"
 
 
+class MessageType(IntEnum):
+    CHOKE = 0
+    UNCHOKE = 1
+    INTERESTED = 2
+    NOT_INTERESTED = 3
+    HAVE = 4
+    BITFIELD = 5
+    REQUEST = 6
+    PIECE = 7
+    CANCEL = 8
+
+
 MY_ID = b"natalka112natalka112"
 STRING_DELIMITER = b":"
 INTEGER_START = b"i"
@@ -24,3 +36,4 @@ BENCODE_END = b"e"
 
 PIECE_SIZE = 20
 PEER_SIZE = 6
+BLOCK_SIZE = 16 * 1024

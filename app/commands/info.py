@@ -1,4 +1,3 @@
-from app.const import PIECE_SIZE
 from app.logging_config import get_logger
 from app.service_func import hex20
 from app.torrent_file import TorrentFile
@@ -6,7 +5,7 @@ from app.torrent_file import TorrentFile
 logger = get_logger(__name__)
 
 
-def show_info(filename: str) -> str:
+def print_info(filename: str) -> str:
     with open(filename, "rb") as file:
         content_bytes = file.read()
     torrent_file = TorrentFile.from_bytes(content_bytes)
@@ -17,11 +16,5 @@ def show_info(filename: str) -> str:
         f"Piece Length: {torrent_file.piece_length}",
         "Piece Hashes:",
     ]
-    pieces: bytes = torrent_file.pieces
-    index = 0
-    logger.debug(pieces)
-    while index < len(pieces):
-        current: str = hex20(pieces[index : index + PIECE_SIZE])
-        result.append(current)
-        index += PIECE_SIZE
+    result += list(map(hex20, torrent_file.pieces))
     return "\n".join(result)
