@@ -63,7 +63,8 @@ class TorrentFile:
             peer = _read_peer(peers.data[index : index + PEER_SIZE])
             result.append(peer)
             index += PEER_SIZE
-        return result
+        # return result
+        return [result[0]]
 
     @property
     def info_hash_hex(self) -> str:

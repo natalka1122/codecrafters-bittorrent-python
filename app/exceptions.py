@@ -10,6 +10,10 @@ class ReaderClosedError(Exception):
     """ReaderClosedError"""
 
 
+class WriterClosedError(Exception):
+    """WriterClosedError"""
+
+
 class WrongPacketFormatError(Exception):
     """WrongPacketFormatError"""
 

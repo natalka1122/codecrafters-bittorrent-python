@@ -1,7 +1,8 @@
 from abc import abstractmethod
 from dataclasses import dataclass
+from typing import final
 
-from app.const import BITTORENT_PROTOCOL, MessageType, StreamExactly
+from app.const import BITTORRENT_PROTOCOL, BLOCK_SIZE, MessageType, StreamExactly
 from app.exceptions import NeedMoreBytesError, WrongPacketFormatError
 from app.logging_config import get_logger
 from app.service_func import hex20
@@ -32,6 +33,7 @@ class Payload:
 
 
 @dataclass
+@final
 class HandshakePacket(Packet):
     info_hash: bytes
     peer_id_bytes: bytes
@@ -43,8 +45,8 @@ class HandshakePacket(Packet):
     def to_bytes(self) -> bytes:
         return b"".join(
             [
-                bytes([len(BITTORENT_PROTOCOL)]),
-                BITTORENT_PROTOCOL,
+                bytes([len(BITTORRENT_PROTOCOL)]),
+                BITTORRENT_PROTOCOL,
                 bytes(8),
                 self.info_hash,
                 self.peer_id_bytes,
@@ -58,10 +60,10 @@ class HandshakePacket(Packet):
     @classmethod
     async def from_stream(cls, reader: StreamExactly) -> "HandshakePacket":
         protocol_str_length: int = (await reader(1))[0]
-        if protocol_str_length != len(BITTORENT_PROTOCOL):
+        if protocol_str_length != len(BITTORRENT_PROTOCOL):
             raise WrongPacketFormatError
         protocol_str = await reader(protocol_str_length)
-        if protocol_str != BITTORENT_PROTOCOL:
+        if protocol_str != BITTORRENT_PROTOCOL:
             raise WrongPacketFormatError
         eight_bytes = await reader(8)
         if eight_bytes != bytes(8):
@@ -103,6 +105,7 @@ class PeerPacket(Packet):
 
 
 @dataclass
+@final
 class KeepAlivePacket(PeerPacket):
     message_type: MessageType = MessageType.KEEPALIVE
 
@@ -112,10 +115,14 @@ class KeepAlivePacket(PeerPacket):
 
 
 @dataclass
+@final
 class RequestPayload(Payload):
     piece_index: int
     offset: int
     length: int
+
+    def __repr__(self) -> str:
+        return f"RequestPayload(piece_index={self.piece_index}, block_index={self.block_index}, length = {self.length}"
 
     @property
     def to_bytes(self) -> bytes:
@@ -123,6 +130,15 @@ class RequestPayload(Payload):
         offset_bytes = self.offset.to_bytes(4)
         length_bytes = self.length.to_bytes(4)
         return piece_index_bytes + offset_bytes + length_bytes
+
+    @property
+    def block_index(self) -> int:
+        remainder = self.offset % BLOCK_SIZE
+        if remainder != 0:
+            logger.error(
+                f"self.offset = {self.offset} self.offset % BLOCK_SIZE = {remainder}"
+            )
+        return self.offset // BLOCK_SIZE
 
     @classmethod
     def from_bytes(cls, raw_data: bytes) -> "RequestPayload":
@@ -135,6 +151,7 @@ class RequestPayload(Payload):
 
 
 @dataclass
+@final
 class RequestPeerPacket(PeerPacket):
     message_type: MessageType = MessageType.REQUEST
 
@@ -147,28 +164,39 @@ class RequestPeerPacket(PeerPacket):
 
 
 @dataclass
+@final
 class PiecePayload(Payload):
-    index: int
-    begin: int
+    piece_index: int
+    offset: int
     block: bytes
 
     def __repr__(self) -> str:
-        return f"PiecePayload(index={self.index}, begin={self.begin}, len(block) = {len(self.block)}"
+        return f"PiecePayload(piece_index={self.piece_index}, block_index={self.block_index}, len = {len(self.block)}"
+
+    @property
+    def block_index(self) -> int:
+        remainder = self.offset % BLOCK_SIZE
+        if remainder != 0:
+            logger.error(
+                f"self.offset = {self.offset} self.offset % BLOCK_SIZE = {remainder}"
+            )
+        return self.offset // BLOCK_SIZE
 
     @property
     def to_bytes(self) -> bytes:
-        index_bytes = self.index.to_bytes(4)
-        begin = self.begin.to_bytes(4)
-        return index_bytes + begin + self.block
+        piece_index_bytes = self.piece_index.to_bytes(4)
+        offset_bytes = self.offset.to_bytes(4)
+        return piece_index_bytes + offset_bytes + self.block
 
     @classmethod
     def from_bytes(cls, raw_data: bytes) -> "PiecePayload":
-        index = int.from_bytes(raw_data[:4])
-        begin = int.from_bytes(raw_data[4:8])
-        return PiecePayload(index=index, begin=begin, block=raw_data[8:])
+        piece_index = int.from_bytes(raw_data[:4])
+        offset = int.from_bytes(raw_data[4:8])
+        return PiecePayload(piece_index=piece_index, offset=offset, block=raw_data[8:])
 
 
 @dataclass
+@final
 class PiecePeerPacket(PeerPacket):
     message_type: MessageType = MessageType.PIECE
 

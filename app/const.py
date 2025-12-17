@@ -29,8 +29,11 @@ class MessageType(IntEnum):
     CANCEL = 8
 
 
+StreamExactly = Callable[[int], Awaitable[bytes]]
+
+
 MY_ID = b"natalka112natalka112"
-BITTORENT_PROTOCOL = b"BitTorrent protocol"
+BITTORRENT_PROTOCOL = b"BitTorrent protocol"
 STRING_DELIMITER = b":"
 INTEGER_START = b"i"
 LIST_START = b"l"
@@ -42,4 +45,6 @@ PEER_SIZE = 6
 BLOCK_SIZE = 16 * 1024
 WINDOW_SIZE = 10
 
-StreamExactly = Callable[[int], Awaitable[bytes]]
+# MAX_CONCURRENT_REQUESTS = 5
+MAX_CONCURRENT_REQUESTS = 1
+# PEER_TIMEOUT = 30

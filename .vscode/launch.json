@@ -13,6 +13,18 @@
                 "sample.torrent",
                 "1"
             ],
+        },
+        {
+            "name": "download",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "app.main",
+            "args": [
+                "download",
+                "-o",
+                "aaa",
+                "sample.torrent"
+            ],
         }
     ]
 }

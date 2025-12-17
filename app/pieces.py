@@ -1,79 +1,135 @@
 import asyncio
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Iterable, Optional
 
 from app.const import BLOCK_SIZE
 from app.logging_config import get_logger
 from app.packets import RequestPayload, RequestPeerPacket
+from app.torrent_file import TorrentFile
 
 logger = get_logger(__name__)
 
+PeerAndPiece = tuple[str, int]
 
-class Pieces:  # noqa: WPS214
-    def __init__(self, piece_length: int, piece_index: int) -> None:
-        blocks_count = piece_length // BLOCK_SIZE
-        logger.info(f"blocks_count = {blocks_count}")
-        self._request_packets: list[RequestPeerPacket] = []
-        self._queue: asyncio.Queue[int] = asyncio.Queue()
-        self._blocks: dict[int, bytes] = dict()
-        self._in_progress: dict[str, int] = dict()
-        for i in range(blocks_count):
-            self._add_task(piece_index=piece_index, block_index=i)
-        if piece_length % BLOCK_SIZE > 0:
-            self._add_task(
-                piece_index=piece_index,
-                block_index=blocks_count,
-                length=piece_length % BLOCK_SIZE,
-            )
+
+@dataclass(frozen=True)
+class PieceBlock:
+    piece_index: int
+    block_index: int
+
+
+class ManyPieces:
+    def __init__(
+        self, torrent_file: TorrentFile, piece_index: Optional[int] = None
+    ) -> None:
+        self._length = torrent_file.length
+        self._request_packets: dict[PieceBlock, RequestPeerPacket] = dict()
+        self._queue: asyncio.Queue[PieceBlock] = asyncio.Queue()
+        self._ready_blocks: dict[PieceBlock, bytes] = dict()
+        self._in_progress: dict[str, set[PieceBlock]] = dict()
+        self._piece_count = len(torrent_file.piece_hashes)
+        if piece_index is None:
+            piece_range: Iterable[int] = range(self._piece_count)
+        else:
+            piece_range = [piece_index]
+        for piece_index in piece_range:
+            if piece_index == self._piece_count - 1:
+                piece_length = torrent_file.length % torrent_file.piece_length
+            else:
+                piece_length = torrent_file.piece_length
+            blocks_count = piece_length // BLOCK_SIZE
+            for block_index in range(blocks_count):
+                self._add_to_queue(piece_index=piece_index, block_index=block_index)
+            if piece_length % BLOCK_SIZE > 0:
+                self._add_to_queue(
+                    piece_index=piece_index,
+                    block_index=blocks_count,
+                    length=piece_length % BLOCK_SIZE,
+                )
 
     @property
     def is_done(self) -> bool:
-        return len(self._blocks) == len(self._request_packets)
+        return len(self._ready_blocks) == len(self._request_packets)
 
     @property
-    def done_blocks(self) -> set[int]:
-        return set(self._blocks.keys())
+    def done_blocks(self) -> set[PieceBlock]:
+        return set(self._ready_blocks.keys())
 
-    async def get_request_packet(self, peer_name: str) -> tuple[int, RequestPeerPacket]:
-        block_index = await self._queue.get()
-        if block_index in self._blocks or peer_name in self._in_progress:
+    def return_in_queue(self, peername: str) -> None:
+        block_index_set = self._in_progress.pop(peername, None)
+        if block_index_set is None:
+            logger.error(
+                f"peername = {peername} self._in_progress = {self._in_progress}"
+            )
             raise NotImplementedError
-        self._in_progress[peer_name] = block_index
-        return block_index, self._request_packets[block_index]
+        for block_index in block_index_set:
+            self._queue.put_nowait(block_index)
+
+    def count_peer_requests(self, peername: str) -> int:
+        return len(self._in_progress[peername])
+
+    async def get_request_packet(
+        self, peername: str
+    ) -> tuple[PieceBlock, RequestPeerPacket]:
+        piece_block = await self._queue.get()
+        if piece_block in self._ready_blocks:
+            logger.error(f"Got {piece_block} that is in self._ready_blocks")
+            raise NotImplementedError
+        if peername not in self._in_progress:
+            self._in_progress[peername] = set()
+        self._in_progress[peername].add(piece_block)
+        return piece_block, self._request_packets[piece_block]
+
+    async def get_request_packet_v2(self, peername: str) -> RequestPeerPacket:
+        piece_block = await self._queue.get()
+        if piece_block in self._ready_blocks:
+            logger.error(f"Got {piece_block} that is in self._ready_blocks")
+            raise NotImplementedError
+        if peername not in self._in_progress:
+            self._in_progress[peername] = set()
+        self._in_progress[peername].add(piece_block)
+        return self._request_packets[piece_block]
 
     def put_processed(
-        self, block_index: int, block_value: bytes, peer_name: str
+        self, piece_block: PieceBlock, block_value: bytes, peername: str
     ) -> None:
-        if (
-            block_index in self._blocks
-            or self._in_progress.get(peer_name) != block_index
-        ):
+        stored_block_value = self._ready_blocks.get(piece_block, None)
+        if stored_block_value is not None:
+            logger.error(f"Already received {piece_block}")
+            if stored_block_value != block_value:
+                logger.error("And this one has different content")
             raise NotImplementedError
-        self._in_progress.pop(peer_name)
-        self._blocks[block_index] = block_value
-
-    def return_in_queue(self, peer_name: str) -> None:
-        block_index = self._in_progress.get(peer_name)
-        if block_index is None:
+        allocated = self._in_progress.get(peername)
+        if allocated is None:
+            logger.error(f"There is no {peername} in {self._in_progress}")
+            logger.error(f"self._in_progress = {self._in_progress}")
             raise NotImplementedError
-        self._in_progress.pop(peer_name)
-        self._queue.put_nowait(block_index)
+        if piece_block not in allocated:
+            logger.error(f"There is no {piece_block} in allocated = {allocated}")
+            raise NotImplementedError
+        allocated.remove(piece_block)
+        self._ready_blocks[piece_block] = block_value
 
     def blocks(self) -> Iterable[bytes]:
         if not self.is_done:
             raise NotImplementedError
-        for index in sorted(self._blocks):
-            yield self._blocks[index]
+        ready_blocks = sorted(
+            self._ready_blocks.keys(), key=lambda x: (x.piece_index, x.block_index)
+        )
+        for index in ready_blocks:
+            yield self._ready_blocks[index]
 
-    def _add_task(
+    def _add_to_queue(
         self, block_index: int, piece_index: int, length: int = BLOCK_SIZE
     ) -> None:
-        self._request_packets.append(
-            RequestPeerPacket(
-                payload=RequestPayload(
-                    piece_index=piece_index,
-                    offset=block_index * BLOCK_SIZE,
-                    length=length,
-                ).to_bytes
-            )
+        piece_block = PieceBlock(piece_index=piece_index, block_index=block_index)
+        if piece_block in self._request_packets:
+            raise NotImplementedError
+        self._request_packets[piece_block] = RequestPeerPacket(
+            payload=RequestPayload(
+                piece_index=piece_index,
+                offset=block_index * BLOCK_SIZE,
+                length=length,
+            ).to_bytes
         )
-        self._queue.put_nowait(block_index)
+        self._queue.put_nowait(piece_block)

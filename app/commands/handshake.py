@@ -1,7 +1,7 @@
 import asyncio
 
 from app.logging_config import get_logger
-from app.peer import Peer
+from app.peer.peer import Peer
 from app.torrent_file import TorrentFile
 
 logger = get_logger(__name__)
