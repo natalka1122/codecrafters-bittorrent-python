@@ -2,7 +2,13 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import final
 
-from app.const import BITTORRENT_PROTOCOL, BLOCK_SIZE_BYTES, MessageType, StreamExactly
+from app.const import (
+    BITTORRENT_PROTOCOL,
+    BLOCK_SIZE_BYTES,
+    METADATA_EXTENSION,
+    MessageType,
+    StreamExactly,
+)
 from app.exceptions import NeedMoreBytesError, WrongPacketFormatError
 from app.logging_config import get_logger
 from app.service_func import hex20
@@ -37,17 +43,22 @@ class Payload:
 class HandshakePacket(Packet):
     info_hash: bytes
     peer_id_bytes: bytes
+    is_magnet: bool
 
     def __repr__(self) -> str:
-        return f"HandshakePacket(info_hash={self.info_hash!r}, peer_id={self.peer_id})"
+        return f"HandshakePacket(info_hash={self.info_hash!r}, peer_id={self.peer_id}, is_magnet={self.is_magnet})"
 
     @property
     def to_bytes(self) -> bytes:
+        if self.is_magnet:
+            eight_bytes: bytes = METADATA_EXTENSION
+        else:
+            eight_bytes = bytes(8)
         return b"".join(
             [
                 bytes([len(BITTORRENT_PROTOCOL)]),
                 BITTORRENT_PROTOCOL,
-                bytes(8),
+                eight_bytes,
                 self.info_hash,
                 self.peer_id_bytes,
             ]
@@ -66,11 +77,12 @@ class HandshakePacket(Packet):
         if protocol_str != BITTORRENT_PROTOCOL:
             raise WrongPacketFormatError
         eight_bytes = await reader(8)
-        if eight_bytes != bytes(8):
-            logger.error(f"eight_bytes = {eight_bytes!r}")
+        is_magnet = eight_bytes == METADATA_EXTENSION
         info_hash = await reader(20)
         peer_id_bytes = await reader(20)
-        return HandshakePacket(info_hash=info_hash, peer_id_bytes=peer_id_bytes)
+        return HandshakePacket(
+            info_hash=info_hash, peer_id_bytes=peer_id_bytes, is_magnet=is_magnet
+        )
 
 
 @dataclass

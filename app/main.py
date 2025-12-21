@@ -5,6 +5,7 @@ from app.commands.decode import print_decode
 from app.commands.download import download, download_piece
 from app.commands.handshake import print_peer_id
 from app.commands.info import print_info
+from app.commands.magnet_handshake import print_magnet_peer_id
 from app.commands.magnet_info import print_magnet_info
 from app.commands.peers import print_peers
 from app.const import Command
@@ -48,6 +49,11 @@ def parse_args() -> argparse.Namespace:  # noqa: WPS213
     subparser = subparsers.add_parser(Command.MAGNET_PARSE, help="Parse magnet link")
     subparser.add_argument("magnet_link", help="Magnet-link to work with")
 
+    subparser = subparsers.add_parser(
+        Command.MAGNET_HANDSHAKE, help="Magnet peer handshake"
+    )
+    subparser.add_argument("magnet_link", help="Magnet-link to work with")
+
     return parser.parse_args()
 
 
@@ -70,6 +76,8 @@ def main() -> None:
             result = ""
         case Command.MAGNET_PARSE:
             result = print_magnet_info(args.magnet_link)
+        case Command.MAGNET_HANDSHAKE:
+            result = print_magnet_peer_id(args.magnet_link)
         case _:
             logger.error(f"Not implemented command = {args.command}")
             return

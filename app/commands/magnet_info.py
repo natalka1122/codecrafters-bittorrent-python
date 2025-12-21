@@ -1,18 +1,10 @@
-import re
-from urllib.parse import unquote
+from app.magnet_link import MagnetLink
 
 
 def print_magnet_info(magnet: str) -> str:
-    match = re.match(
-        r"magnet:\?xt=urn:btih:(?P<hash>[\w]{40})&dn=(?P<filename>[\w\.]+)&tr=(?P<tracker>[\w%-\.]+)",
-        magnet,
-    )
-    if match is None:
-        raise NotImplementedError
-    info_hash = match.groupdict()["hash"]
-    tracker_url = unquote(match.groupdict()["tracker"])
+    magnet_link = MagnetLink(magnet)
     result = [
-        f"Tracker URL: {tracker_url}",
-        f"Info Hash: {info_hash}",
+        f"Tracker URL: {magnet_link.tracker_url}",
+        f"Info Hash: {magnet_link.info_hash_hex}",
     ]
     return "\n".join(result)

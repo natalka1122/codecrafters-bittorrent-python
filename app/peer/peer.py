@@ -35,7 +35,9 @@ OptionalPeerPacket = Optional[PeerPacket]
 
 
 class Peer:  # noqa: WPS214
-    def __init__(self, ip: str, port: int, info_hash: bytes) -> None:
+    def __init__(
+        self, ip: str, port: int, info_hash: bytes, is_magnet: bool = False
+    ) -> None:
         self._ip = ip
         self._port = port
         self._info_hash = info_hash
@@ -45,6 +47,7 @@ class Peer:  # noqa: WPS214
         self._tasks: set[Task[OptionalPeerPacket]] = set()
         self._read_task: Optional[Task[PeerPacket]] = None
         self._in_flight = 0
+        self._is_magnet = is_magnet
         self.closed: Event = Event()
 
     def __str__(self) -> str:
@@ -58,7 +61,13 @@ class Peer:  # noqa: WPS214
         self._reader = AsyncReaderHandler(
             reader, peername=self._peername, closed_event=self.closed
         )
-        await self._write(HandshakePacket(self._info_hash, MY_ID))
+        await self._write(
+            HandshakePacket(
+                info_hash=self._info_hash,
+                peer_id_bytes=MY_ID,
+                is_magnet=self._is_magnet,
+            )
+        )
         result = await self._read_handshake()
         return result.peer_id
 
