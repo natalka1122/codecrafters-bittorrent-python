@@ -2,7 +2,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import final
 
-from app.const import BITTORRENT_PROTOCOL, BLOCK_SIZE, MessageType, StreamExactly
+from app.const import BITTORRENT_PROTOCOL, BLOCK_SIZE_BYTES, MessageType, StreamExactly
 from app.exceptions import NeedMoreBytesError, WrongPacketFormatError
 from app.logging_config import get_logger
 from app.service_func import hex20
@@ -98,6 +98,8 @@ class PeerPacket(Packet):
             result_type: type[PeerPacket] = RequestPeerPacket
         elif message_type == MessageType.PIECE:
             result_type = PiecePeerPacket
+        elif message_type == MessageType.KEEPALIVE:
+            result_type = KeepAlivePacket
         else:
             result_type = PeerPacket
         payload = await reader(length - 1)
@@ -133,12 +135,12 @@ class RequestPayload(Payload):
 
     @property
     def block_index(self) -> int:
-        remainder = self.offset % BLOCK_SIZE
+        remainder = self.offset % BLOCK_SIZE_BYTES
         if remainder != 0:
             logger.error(
-                f"self.offset = {self.offset} self.offset % BLOCK_SIZE = {remainder}"
+                f"self.offset = {self.offset} self.offset % BLOCK_SIZE_BYTES = {remainder}"
             )
-        return self.offset // BLOCK_SIZE
+        return self.offset // BLOCK_SIZE_BYTES
 
     @classmethod
     def from_bytes(cls, raw_data: bytes) -> "RequestPayload":
@@ -175,12 +177,12 @@ class PiecePayload(Payload):
 
     @property
     def block_index(self) -> int:
-        remainder = self.offset % BLOCK_SIZE
+        remainder = self.offset % BLOCK_SIZE_BYTES
         if remainder != 0:
             logger.error(
-                f"self.offset = {self.offset} self.offset % BLOCK_SIZE = {remainder}"
+                f"self.offset = {self.offset} self.offset % BLOCK_SIZE_BYTES = {remainder}"
             )
-        return self.offset // BLOCK_SIZE
+        return self.offset // BLOCK_SIZE_BYTES
 
     @property
     def to_bytes(self) -> bytes:

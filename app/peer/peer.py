@@ -5,6 +5,7 @@ from asyncio import (
     create_task,
     current_task,
     open_connection,
+    sleep,
     wait,
 )
 from typing import Optional
@@ -21,7 +22,7 @@ from app.packets import (
 )
 from app.peer.async_reader import AsyncReaderHandler
 from app.peer.async_writer import AsyncWriterHandler
-from app.pieces import ManyPieces, PieceBlock
+from app.pieces import PieceBlock, Pieces
 
 logger = get_logger(__name__)
 
@@ -30,144 +31,68 @@ def peer_to_str(ip: str, port: int) -> str:
     return f"[{ip}:{port}]"
 
 
-class Peer:
+OptionalPeerPacket = Optional[PeerPacket]
+
+
+class Peer:  # noqa: WPS214
     def __init__(self, ip: str, port: int, info_hash: bytes) -> None:
-        self.ip = ip
-        self.port = port
-        self.info_hash = info_hash
-        self.peername = f"[{self.ip}:{self.port}]"
+        self._ip = ip
+        self._port = port
+        self._info_hash = info_hash
+        self._peername = f"[{self._ip}:{self._port}]"
         self._reader: Optional[AsyncReaderHandler] = None
         self._writer: Optional[AsyncWriterHandler] = None
+        self._tasks: set[Task[OptionalPeerPacket]] = set()
+        self._read_task: Optional[Task[PeerPacket]] = None
+        self._in_flight = 0
         self.closed: Event = Event()
 
     def __str__(self) -> str:
-        return self.peername
-
-    @property
-    def writer(self) -> AsyncWriterHandler:
-        if self._writer is None:
-            raise NotImplementedError
-        return self._writer
-
-    @property
-    def reader(self) -> AsyncReaderHandler:
-        if self._reader is None:
-            raise NotImplementedError
-        return self._reader
+        return self._peername
 
     async def handshake(self) -> str:
-        reader, writer = await open_connection(self.ip, self.port)
+        reader, writer = await open_connection(self._ip, self._port)
         self._writer = AsyncWriterHandler(
-            writer, peername=self.peername, closed_event=self.closed
+            writer, peername=self._peername, closed_event=self.closed
         )
         self._reader = AsyncReaderHandler(
-            reader, peername=self.peername, closed_event=self.closed
+            reader, peername=self._peername, closed_event=self.closed
         )
-
-        await self._write(HandshakePacket(self.info_hash, MY_ID))
+        await self._write(HandshakePacket(self._info_hash, MY_ID))
         result = await self._read_handshake()
         return result.peer_id
 
-    # async def communicate_v2(self, many_pieces: ManyPieces) -> None:  # noqa: WPS217
-    #     await self.handshake()
-    #     logger.info(f"{self}: Handshake done")
-    #     await self._bitfield_unchoke()
-    #     logger.info(f"{self}: Unchoked")
-
-    #     while not many_pieces.is_done:
-    #         piece_block, request = await many_pieces.get_request_packet(self.peername)
-    #         await self._write(request)
-    #         message_response = await self._read_peer()
-    #         logger.debug(f"message_response = {message_response}")
-    #         if not isinstance(message_response, PiecePeerPacket):
-    #             raise NotImplementedError
-    #         many_pieces.put_processed(
-    #             piece_block=piece_block,
-    #             block_value=message_response.parsed_payload.block,
-    #             peername=self.peername,
-    #         )
-    #     logger.info("DONE")
-
-    async def communicate_v3(self, many_pieces: ManyPieces) -> None:  # noqa: WPS217
+    async def communicate(self, pieces: Pieces) -> None:  # noqa: WPS217
         await self.handshake()
-        logger.info(f"{self}: Handshake done")
         await self._bitfield_unchoke()
         logger.info(f"{self}: Unchoked")
+        self.pieces = pieces
 
-        read_task = create_task(self._read_peer(), name=f"{self} reader")
-        tasks: set[Task[Optional[PeerPacket]]] = {  # noqa: WPS234
-            create_task(self._write_from_queue(many_pieces), name=f"{self} writer")
-            for _ in range(MAX_CONCURRENT_REQUESTS)
-        }
-        tasks.add(read_task)
-        while not many_pieces.is_done:
-            done_tasks, tasks = await wait(tasks, return_when=FIRST_COMPLETED)
-            logger.info(f"done = {done_tasks}")
-            logger.info(f"tasks = {tasks}")
-            logger.info(f"many_pieces.done_blocks = {many_pieces.done_blocks}")
+        await self._fill_writers()
+        self.read_task = create_task(self._read_peer(), name=f"{self} reader")
+        self._tasks.add(self.read_task)
+
+        while not pieces.is_done:
+            done_tasks, tasks = await wait(self._tasks, return_when=FIRST_COMPLETED)
+            self._tasks = tasks
             for done_task in done_tasks:
-                if done_task == read_task:
-                    if done_task.exception() is None:
-                        logger.info(f"done_task = {done_task}")
-                        logger.info(f"done_task.result() = {done_task.result()}")
-                        message_response = done_task.result()
-                        if isinstance(message_response, PiecePeerPacket):
-                            piece_block = PieceBlock(
-                                piece_index=message_response.parsed_payload.piece_index,
-                                block_index=message_response.parsed_payload.block_index,
-                            )
-                            many_pieces.put_processed(
-                                piece_block=piece_block,
-                                block_value=message_response.parsed_payload.block,
-                                peername=self.peername,
-                            )
-                            logger.info(
-                                f"many_pieces.done_blocks = {many_pieces.done_blocks}"
-                            )
-                        elif not isinstance(message_response, KeepAlivePacket):
-                            logger.info(
-                                f"message_response = {type(message_response)} {message_response}"
-                            )
-                            raise NotImplementedError
-                    else:
-                        many_pieces.return_in_queue(peername=self.peername)
-                    tasks.add(create_task(self._read_peer(), name=f"{self} reader"))
-            while many_pieces.count_peer_requests(self.peername) <= MAX_CONCURRENT_REQUESTS:
-                tasks.add(
-                    create_task(
-                        self._write_from_queue(many_pieces),
-                        name=f"{self} writer",
-                    )
-                )
-                logger.info("Created new writer")
-        logger.info("DONE")
-
-    #     while not many_pieces.is_done:
-    #         piece_block, request = await many_pieces.get_request_packet(self.peername)
-    #         await self.write(request)
-    #         message_response = await self.read_peer()
-    #         logger.debug(f"message_response = {message_response}")
-    #         if not isinstance(message_response, PiecePeerPacket):
-    #             raise NotImplementedError
-    #         many_pieces.put_processed(
-    #             piece_block=piece_block,
-    #             block_value=message_response.parsed_payload.block,
-    #             peername=self.peername,
-    #         )
-    #     logger.info("DONE")
-
-    # async def writer_loop(self, many_pieces: ManyPieces) -> None:
-    #     pass
+                self._process_done_task(done_task)
+            await self._fill_writers()
 
     async def _write(self, packet: Packet) -> None:
-        await self.writer.write(packet.to_bytes)
-        logger.debug(f"{self}: write {packet}")
+        if self._writer is None:
+            raise NotImplementedError
+        await self._writer.write(packet.to_bytes)
 
     async def _read_handshake(self) -> HandshakePacket:
-        return await self.reader.read_handshake()
+        if self._reader is None:
+            raise NotImplementedError
+        return await self._reader.read_handshake()
 
     async def _read_peer(self) -> PeerPacket:
-        return await self.reader.read_peer()
+        if self._reader is None:
+            raise NotImplementedError
+        return await self._reader.read_peer()
 
     async def _bitfield_unchoke(self) -> None:
         peer_response = await self._read_peer()
@@ -181,12 +106,51 @@ class Peer:
             logger.error(f"peer_response = {peer_response}")
             raise PeerCommunicationError
 
-    async def _write_from_queue(self, many_pieces: ManyPieces) -> None:
-        request = await many_pieces.get_request_packet_v2(self.peername)
+    async def _write_from_queue(self, pieces: Pieces) -> None:
+        request = await pieces.get_request_packet(self._peername)
         task = current_task()
         if task is None:
             raise NotImplementedError
-        task.set_name(
-            f"{task.get_name()}: ({request.parsed_payload.piece_index}, {request.parsed_payload.block_index})"
-        )
+        task.set_name(f"{task.get_name()}: {request}")
         await self._write(request)
+
+    async def _fill_writers(self) -> None:
+        while self._in_flight < MAX_CONCURRENT_REQUESTS:
+            self._tasks.add(
+                create_task(
+                    self._write_from_queue(self.pieces),
+                    name=f"{self} writer",
+                )
+            )
+            self._in_flight += 1
+            logger.info(f"{self} Created new writer")
+            await sleep(0)
+
+    def _process_done_task(self, task: Task[OptionalPeerPacket]) -> None:
+        if not task.done():
+            raise NotImplementedError
+        if task != self.read_task:
+            return
+        self._in_flight -= 1
+        if task.exception() is None:
+            message_response = task.result()
+            message_response = task.result()
+            if isinstance(message_response, PiecePeerPacket):
+                piece_block = PieceBlock(
+                    piece_index=message_response.parsed_payload.piece_index,
+                    block_index=message_response.parsed_payload.block_index,
+                )
+                self.pieces.put_processed(
+                    piece_block=piece_block,
+                    block_value=message_response.parsed_payload.block,
+                    peername=self._peername,
+                )
+            elif not isinstance(message_response, KeepAlivePacket):
+                logger.error(
+                    f"message_response = {type(message_response)} {message_response}"
+                )
+                raise NotImplementedError
+        else:
+            self.pieces.return_in_queue(peername=self._peername)
+        self.read_task = create_task(self._read_peer(), name=f"{self} reader")
+        self._tasks.add(self.read_task)

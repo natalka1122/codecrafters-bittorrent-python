@@ -28,14 +28,14 @@ class AsyncReaderHandler:
     ):
         self.closed: Event = closed_event
         self._reader: StreamReader = reader
-        self.peername: str = peername
+        self._peername: str = peername
         self._lock = Lock()
         self._closure_task: Task[None] = create_task(
             self._closure_loop(), name=f"{peername}: AsyncReaderHandler._closure_loop"
         )
 
     def __str__(self) -> str:
-        return self.peername
+        return self._peername
 
     async def read_handshake(self) -> HandshakePacket:
         result = await self._read(HandshakePacket.from_stream)
@@ -65,7 +65,7 @@ class AsyncReaderHandler:
             except ReaderClosedError:
                 raise
             except Exception as e:
-                logger.error(f"{self}: Reader error: {e}")
+                logger.debug(f"{self}: Reader error: {e}")
                 self.closed.set()
                 raise ReaderClosedError(f"Read failed: {e}") from e
         logger.debug(f"{self}: Read {result}")
@@ -92,4 +92,4 @@ class AsyncReaderHandler:
 
     async def _closure_loop(self) -> None:
         await self.closed.wait()
-        logger.info(f"{self}: Reader closed")
+        logger.debug(f"{self}: Reader closed")

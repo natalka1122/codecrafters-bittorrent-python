@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from app.const import BLOCK_SIZE
+from app.const import BLOCK_SIZE_BYTES
 from app.logging_config import get_logger
 from app.packets import RequestPayload, RequestPeerPacket
 from app.torrent_file import TorrentFile
@@ -18,7 +18,7 @@ class PieceBlock:
     block_index: int
 
 
-class ManyPieces:
+class Pieces:  # noqa: WPS214
     def __init__(
         self, torrent_file: TorrentFile, piece_index: Optional[int] = None
     ) -> None:
@@ -37,14 +37,14 @@ class ManyPieces:
                 piece_length = torrent_file.length % torrent_file.piece_length
             else:
                 piece_length = torrent_file.piece_length
-            blocks_count = piece_length // BLOCK_SIZE
+            blocks_count = piece_length // BLOCK_SIZE_BYTES
             for block_index in range(blocks_count):
                 self._add_to_queue(piece_index=piece_index, block_index=block_index)
-            if piece_length % BLOCK_SIZE > 0:
+            if piece_length % BLOCK_SIZE_BYTES > 0:
                 self._add_to_queue(
                     piece_index=piece_index,
                     block_index=blocks_count,
-                    length=piece_length % BLOCK_SIZE,
+                    length=piece_length % BLOCK_SIZE_BYTES,
                 )
 
     @property
@@ -65,22 +65,7 @@ class ManyPieces:
         for block_index in block_index_set:
             self._queue.put_nowait(block_index)
 
-    def count_peer_requests(self, peername: str) -> int:
-        return len(self._in_progress[peername])
-
-    async def get_request_packet(
-        self, peername: str
-    ) -> tuple[PieceBlock, RequestPeerPacket]:
-        piece_block = await self._queue.get()
-        if piece_block in self._ready_blocks:
-            logger.error(f"Got {piece_block} that is in self._ready_blocks")
-            raise NotImplementedError
-        if peername not in self._in_progress:
-            self._in_progress[peername] = set()
-        self._in_progress[peername].add(piece_block)
-        return piece_block, self._request_packets[piece_block]
-
-    async def get_request_packet_v2(self, peername: str) -> RequestPeerPacket:
+    async def get_request_packet(self, peername: str) -> RequestPeerPacket:
         piece_block = await self._queue.get()
         if piece_block in self._ready_blocks:
             logger.error(f"Got {piece_block} that is in self._ready_blocks")
@@ -120,7 +105,7 @@ class ManyPieces:
             yield self._ready_blocks[index]
 
     def _add_to_queue(
-        self, block_index: int, piece_index: int, length: int = BLOCK_SIZE
+        self, block_index: int, piece_index: int, length: int = BLOCK_SIZE_BYTES
     ) -> None:
         piece_block = PieceBlock(piece_index=piece_index, block_index=block_index)
         if piece_block in self._request_packets:
@@ -128,7 +113,7 @@ class ManyPieces:
         self._request_packets[piece_block] = RequestPeerPacket(
             payload=RequestPayload(
                 piece_index=piece_index,
-                offset=block_index * BLOCK_SIZE,
+                offset=block_index * BLOCK_SIZE_BYTES,
                 length=length,
             ).to_bytes
         )

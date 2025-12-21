@@ -21,14 +21,14 @@ class AsyncWriterHandler:
     def __init__(self, writer: StreamWriter, peername: str, closed_event: Event):
         self.closed: Event = closed_event
         self._writer = writer
-        self.peername = peername
+        self._peername = peername
         self._lock = Lock()
         self._closure_task: Task[None] = create_task(
             self._closure_loop(), name=f"{peername}: AsyncWriterHandler._closure_loop"
         )
 
     def __str__(self) -> str:
-        return self.peername
+        return self._peername
 
     async def write(self, data: bytes) -> None:  # noqa: WPS238
         if self.closed.is_set():
@@ -43,7 +43,7 @@ class AsyncWriterHandler:
             except WriterClosedError:
                 raise
             except Exception as e:
-                logger.error(f"{self}: Writer error: {e}")
+                logger.debug(f"{self}: Writer error: {e}")
                 self.closed.set()
                 raise WriterClosedError(f"Write failed: {e}") from e
 
@@ -77,4 +77,4 @@ class AsyncWriterHandler:
             logger.debug(f"{self}: Cancellation during closure")
             raise
 
-        logger.info(f"{self}: Writer closed")
+        logger.debug(f"{self}: Writer closed")

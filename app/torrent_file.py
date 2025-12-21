@@ -5,7 +5,7 @@ from typing import Any, Optional
 import requests
 
 from app.bencode import Bencode, BencodeAny, Dict, Integer, String
-from app.const import MY_ID, PEER_SIZE, PIECE_SIZE
+from app.const import MY_ID, PEER_ID_SIZE_BYTES, PIECE_HASH_SIZE_BYTES
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -47,11 +47,10 @@ class TorrentFile:
         }
         remainder, response = Bencode.from_bytes(_fetch(self.announce, params=params))
         if len(remainder) > 0:
-            logger.info(f"remainder = {remainder!r}")
+            logger.error(f"remainder = {remainder!r}")
             raise NotImplementedError
-        logger.info(f"response = {response}")
         if not isinstance(response, Dict):
-            logger.error(f"type(response) = {type(response)}")
+            logger.error(f"response = {type(response)} {response}")
             raise NotImplementedError
         peers = response.data.get("peers")
         if not isinstance(peers, String):
@@ -59,12 +58,10 @@ class TorrentFile:
             raise NotImplementedError
         result: list[tuple[str, int]] = []
         index = 0
-        while index < len(peers.data):
-            peer = _read_peer(peers.data[index : index + PEER_SIZE])
+        for index in range(0, len(peers.data), PEER_ID_SIZE_BYTES):
+            peer = _read_peer(peers.data[index : index + PEER_ID_SIZE_BYTES])
             result.append(peer)
-            index += PEER_SIZE
-        # return result
-        return [result[0]]
+        return result
 
     @property
     def info_hash_hex(self) -> str:
@@ -78,9 +75,8 @@ class TorrentFile:
     def from_bytes(cls, raw_data: bytes) -> "TorrentFile":  # noqa: WPS210, WPS238
         remainder, content = Bencode.from_bytes(raw_data)
         if len(remainder) > 0:
-            logger.info(f"remainder = {remainder!r}")
+            logger.error(f"remainder = {remainder!r}")
             raise NotImplementedError
-        logger.info(f"content = {content}")
         announce: Optional[BencodeAny] = content.data.get("announce")
         if not isinstance(announce, String):
             logger.error(f"type(announce) = {type(announce)}")
@@ -103,8 +99,8 @@ class TorrentFile:
             raise NotImplementedError
         pieces_bytes = pieces_bencode.data
         piece_hashes: list[bytes] = [
-            pieces_bytes[i : i + PIECE_SIZE]
-            for i in range(0, len(pieces_bytes), PIECE_SIZE)  # noqa: WPS221
+            pieces_bytes[i : i + PIECE_HASH_SIZE_BYTES]
+            for i in range(0, len(pieces_bytes), PIECE_HASH_SIZE_BYTES)  # noqa: WPS221
         ]
         return TorrentFile(
             announce=announce.data.decode(),
