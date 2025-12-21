@@ -5,6 +5,7 @@ from app.commands.decode import print_decode
 from app.commands.download import download, download_piece
 from app.commands.handshake import print_peer_id
 from app.commands.info import print_info
+from app.commands.magnet_info import print_magnet_info
 from app.commands.peers import print_peers
 from app.const import Command
 from app.logging_config import get_logger, setup_logging
@@ -21,11 +22,15 @@ def parse_args() -> argparse.Namespace:  # noqa: WPS213
     subparser = subparsers.add_parser(Command.DECODE, help="Decode a given string")
     subparser.add_argument("string", help="String to work with")
 
-    subparser = subparsers.add_parser(Command.INFO, help="Print information about the torrent file")
-    subparser.add_argument("torrent_file", help="Torrent file to work with")  # noqa: WPS204, WPS226
+    subparser = subparsers.add_parser(
+        Command.INFO, help="Print information about the torrent file"
+    )
+    subparser.add_argument(  # noqa: WPS204
+        "torrent_file", help="Torrent file to work with"  # noqa:  WPS226
+    )
 
     subparser = subparsers.add_parser(Command.PEERS, help="Discover peers")
-    subparser.add_argument("torrent_file", help="Torrent file to work with")  # noqa: WPS226
+    subparser.add_argument("torrent_file", help="Torrent file to work with")
 
     subparser = subparsers.add_parser(Command.HANDSHAKE, help="Peer handshake")
     subparser.add_argument("torrent_file", help="Torrent file to work with")
@@ -39,12 +44,16 @@ def parse_args() -> argparse.Namespace:  # noqa: WPS213
     subparser = subparsers.add_parser(Command.DOWNLOAD, help="Download the whole file")
     subparser.add_argument("-o", "--output", required=True, help="Output file path")
     subparser.add_argument("torrent_file", help="Torrent file to work with")
+
+    subparser = subparsers.add_parser(Command.MAGNET_PARSE, help="Parse magnet link")
+    subparser.add_argument("magnet_link", help="Magnet-link to work with")
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    match args.command:
+    match args.command:  # noqa: WPS242
         case Command.DECODE:
             result = print_decode(args.string.encode())
         case Command.INFO:
@@ -59,6 +68,8 @@ def main() -> None:
         case Command.DOWNLOAD:
             download(args.output, args.torrent_file)
             result = ""
+        case Command.MAGNET_PARSE:
+            result = print_magnet_info(args.magnet_link)
         case _:
             logger.error(f"Not implemented command = {args.command}")
             return
