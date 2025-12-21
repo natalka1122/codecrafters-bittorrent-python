@@ -2,10 +2,10 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import final
 
+from app.bencode import Dict, Integer
 from app.const import (
     BITTORRENT_PROTOCOL,
     BLOCK_SIZE_BYTES,
-    METADATA_EXTENSION,
     MessageType,
     StreamExactly,
 )
@@ -43,22 +43,27 @@ class Payload:
 class HandshakePacket(Packet):
     info_hash: bytes
     peer_id_bytes: bytes
-    is_magnet: bool
+    extension_enabled: bool
 
     def __repr__(self) -> str:
-        return f"HandshakePacket(info_hash={self.info_hash!r}, peer_id={self.peer_id}, is_magnet={self.is_magnet})"
+        return ", ".join(
+            [
+                f"HandshakePacket(info_hash={self.info_hash!r}",
+                f"peer_id={self.peer_id}",
+                f"extension_enabled={self.extension_enabled})",  # noqa: WPS226
+            ]
+        )
 
     @property
     def to_bytes(self) -> bytes:
-        if self.is_magnet:
-            eight_bytes: bytes = METADATA_EXTENSION
-        else:
-            eight_bytes = bytes(8)
+        reserved = bytearray(8)
+        if self.extension_enabled:
+            reserved[5] |= 0x10
         return b"".join(
             [
                 bytes([len(BITTORRENT_PROTOCOL)]),
                 BITTORRENT_PROTOCOL,
-                eight_bytes,
+                bytes(reserved),
                 self.info_hash,
                 self.peer_id_bytes,
             ]
@@ -69,19 +74,23 @@ class HandshakePacket(Packet):
         return hex20(self.peer_id_bytes)
 
     @classmethod
-    async def from_stream(cls, reader: StreamExactly) -> "HandshakePacket":
+    async def from_stream(  # noqa: WPS210
+        cls, reader: StreamExactly
+    ) -> "HandshakePacket":
         protocol_str_length: int = (await reader(1))[0]
         if protocol_str_length != len(BITTORRENT_PROTOCOL):
             raise WrongPacketFormatError
         protocol_str = await reader(protocol_str_length)
         if protocol_str != BITTORRENT_PROTOCOL:
             raise WrongPacketFormatError
-        eight_bytes = await reader(8)
-        is_magnet = eight_bytes == METADATA_EXTENSION
+        reserved_bytes = await reader(8)
+        extension_enabled = (reserved_bytes[5] & 0x10) != 0
         info_hash = await reader(20)
         peer_id_bytes = await reader(20)
         return HandshakePacket(
-            info_hash=info_hash, peer_id_bytes=peer_id_bytes, is_magnet=is_magnet
+            info_hash=info_hash,
+            peer_id_bytes=peer_id_bytes,
+            extension_enabled=extension_enabled,
         )
 
 
@@ -96,7 +105,7 @@ class PeerPacket(Packet):
         return len(result).to_bytes(4) + result
 
     @classmethod
-    async def from_stream(cls, reader: StreamExactly) -> "PeerPacket":
+    async def from_stream(cls, reader: StreamExactly) -> "PeerPacket":  # noqa: WPS231
         length = int.from_bytes(await reader(4))
         if length == 0:
             return KeepAlivePacket()
@@ -112,6 +121,8 @@ class PeerPacket(Packet):
             result_type = PiecePeerPacket
         elif message_type == MessageType.KEEPALIVE:
             result_type = KeepAlivePacket
+        elif message_type == MessageType.EXTENDED:
+            result_type = ExtendedPacket
         else:
             result_type = PeerPacket
         payload = await reader(length - 1)
@@ -220,3 +231,33 @@ class PiecePeerPacket(PeerPacket):
 
     def __repr__(self) -> str:
         return f"PiecePeerPacket(message_type={self.message_type}, parsed_payload={self.parsed_payload})"
+
+
+@dataclass
+@final
+class ExtendedPayload(Payload):
+    ut_metadata: int
+
+    @property
+    def to_bytes(self) -> bytes:
+        result = Dict({"m": Dict({"ut_metadata": Integer(1)})})
+        return b"".join([b"\x00", result.to_bytes])
+
+    @classmethod
+    def from_bytes(cls, raw_data: bytes) -> "PiecePayload":
+        logger.error(f"raw_data = {raw_data!r}")
+        raise NotImplementedError
+        # return ExtendedPayload()
+
+
+@dataclass
+@final
+class ExtendedPacket(PeerPacket):
+    message_type: MessageType = MessageType.EXTENDED
+
+    @property
+    def parsed_payload(self) -> PiecePayload:
+        return PiecePayload.from_bytes(self.payload)
+
+    def __repr__(self) -> str:
+        return f"ExtendedPacket(message_type={self.message_type}, parsed_payload={self.parsed_payload})"

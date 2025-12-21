@@ -14,6 +14,8 @@ from app.const import MAX_CONCURRENT_REQUESTS, MY_ID, MessageType
 from app.exceptions import PeerCommunicationError
 from app.logging_config import get_logger
 from app.packets import (
+    ExtendedPacket,
+    ExtendedPayload,
     HandshakePacket,
     KeepAlivePacket,
     Packet,
@@ -36,7 +38,7 @@ OptionalPeerPacket = Optional[PeerPacket]
 
 class Peer:  # noqa: WPS214
     def __init__(
-        self, ip: str, port: int, info_hash: bytes, is_magnet: bool = False
+        self, ip: str, port: int, info_hash: bytes, extension_enabled: bool = False
     ) -> None:
         self._ip = ip
         self._port = port
@@ -47,7 +49,7 @@ class Peer:  # noqa: WPS214
         self._tasks: set[Task[OptionalPeerPacket]] = set()
         self._read_task: Optional[Task[PeerPacket]] = None
         self._in_flight = 0
-        self._is_magnet = is_magnet
+        self._extension_enabled = extension_enabled
         self.closed: Event = Event()
 
     def __str__(self) -> str:
@@ -65,10 +67,13 @@ class Peer:  # noqa: WPS214
             HandshakePacket(
                 info_hash=self._info_hash,
                 peer_id_bytes=MY_ID,
-                is_magnet=self._is_magnet,
+                extension_enabled=self._extension_enabled,
             )
         )
         result = await self._read_handshake()
+        if self._extension_enabled:
+            self._extension_enabled = result.extension_enabled
+            await self._write(ExtendedPacket(payload=ExtendedPayload(1).to_bytes))
         return result.peer_id
 
     async def communicate(self, pieces: Pieces) -> None:  # noqa: WPS217

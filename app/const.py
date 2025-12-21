@@ -27,6 +27,7 @@ class MessageType(IntEnum):
     REQUEST = 6
     PIECE = 7
     CANCEL = 8
+    EXTENDED = 20
 
 
 StreamExactly = Callable[[int], Awaitable[bytes]]
@@ -45,5 +46,3 @@ PEER_ID_SIZE_BYTES = 6
 BLOCK_SIZE_BYTES = 16 * 1024
 
 MAX_CONCURRENT_REQUESTS = 5
-
-METADATA_EXTENSION = b"\x00\x00\x00\x00\x00\x10\x00\x00"
