@@ -244,10 +244,24 @@ class ExtendedPayload(Payload):
         return b"".join([b"\x00", result.to_bytes])
 
     @classmethod
-    def from_bytes(cls, raw_data: bytes) -> "PiecePayload":
+    def from_bytes(cls, raw_data: bytes) -> "ExtendedPayload":  # noqa: WPS238
         logger.error(f"raw_data = {raw_data!r}")
-        raise NotImplementedError
-        # return ExtendedPayload()
+        if raw_data[0] != 0:
+            logger.error(f"raw_data = {raw_data!r}")
+            raise NotImplementedError
+        remainder, m_dict = Dict.from_bytes(raw_data[1:])
+        if len(remainder) > 0:
+            logger.error(f"raw_data = {raw_data!r}")
+            raise NotImplementedError
+        m_dict_value = m_dict["m"]
+        if not isinstance(m_dict_value, Dict):
+            logger.error(f"m_dict = {m_dict}")
+            raise NotImplementedError
+        ut_metadata = m_dict_value["ut_metadata"]
+        if not isinstance(ut_metadata, Integer):
+            logger.error(f"m_dict = {m_dict}")
+            raise NotImplementedError
+        return ExtendedPayload(ut_metadata=ut_metadata.data)
 
 
 @dataclass
@@ -256,8 +270,8 @@ class ExtendedPacket(PeerPacket):
     message_type: MessageType = MessageType.EXTENDED
 
     @property
-    def parsed_payload(self) -> PiecePayload:
-        return PiecePayload.from_bytes(self.payload)
+    def parsed_payload(self) -> ExtendedPayload:
+        return ExtendedPayload.from_bytes(self.payload)
 
     def __repr__(self) -> str:
         return f"ExtendedPacket(message_type={self.message_type}, parsed_payload={self.parsed_payload})"

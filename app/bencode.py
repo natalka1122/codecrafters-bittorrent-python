@@ -49,7 +49,9 @@ class Bencode(ABC, Generic[T]):  # noqa: WPS214
             return Dict.from_bytes(raw_bytes)
         if chr(raw_bytes[0]).isdigit():
             return String.from_bytes(raw_bytes)
-        raise WrongBencodeFormatError(f"Bencode.from_bytes(): raw_bytes = {raw_bytes!r}")
+        raise WrongBencodeFormatError(
+            f"Bencode.from_bytes(): raw_bytes = {raw_bytes!r}"
+        )
 
     @abstractmethod
     def _to_bytes(self) -> bytes: ...
@@ -80,7 +82,9 @@ class String(Bencode[bytes]):
         if len(raw_bytes) < 2:
             raise NeedMoreBytesError
         if not chr(raw_bytes[0]).isdigit():
-            raise WrongBencodeFormatError(f"String.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"String.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
         length_str = ""
         index = 0
         while index < len(raw_bytes) and chr(raw_bytes[index]).isdigit():
@@ -90,7 +94,9 @@ class String(Bencode[bytes]):
         if index + length > len(raw_bytes):
             raise NeedMoreBytesError
         if raw_bytes[index : index + 1] != const.STRING_DELIMITER:
-            raise WrongBencodeFormatError(f"String.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"String.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
         result = raw_bytes[index + 1 : index + 1 + length]
         return raw_bytes[index + 1 + length :], String(result)
 
@@ -113,11 +119,15 @@ class Integer(Bencode[int]):
         return str(self.data)
 
     @classmethod
-    def from_bytes(cls, raw_bytes: bytes) -> tuple[bytes, "Integer"]:  # noqa: WPS231, WPS238
+    def from_bytes(
+        cls, raw_bytes: bytes
+    ) -> tuple[bytes, "Integer"]:  # noqa: WPS231, WPS238
         if len(raw_bytes) < 3:
             raise NeedMoreBytesError
         if raw_bytes[:1] != const.INTEGER_START:
-            raise WrongBencodeFormatError(f"Integer.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"Integer.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
 
         result_str = ""
         index = 1
@@ -131,7 +141,9 @@ class Integer(Bencode[int]):
         try:
             result = int(result_str)
         except ValueError:
-            raise WrongBencodeFormatError(f"Integer.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"Integer.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
         return raw_bytes[index + 1 :], Integer(result)
 
     def _to_bytes(self) -> bytes:
@@ -159,7 +171,9 @@ class List(Bencode[list[BencodeAny]]):
         if len(raw_bytes) < 2:
             raise NeedMoreBytesError
         if raw_bytes[:1] != const.LIST_START:
-            raise WrongBencodeFormatError(f"List.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"List.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
 
         raw_bytes = raw_bytes[1:]
         result: list[BencodeAny] = []
@@ -169,7 +183,9 @@ class List(Bencode[list[BencodeAny]]):
         if len(raw_bytes) < 1:
             raise NeedMoreBytesError
         if raw_bytes[:1] != const.BENCODE_END:
-            raise WrongBencodeFormatError(f"List.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"List.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
         return raw_bytes[1:], List(result)
 
     def _to_bytes(self) -> bytes:
@@ -181,6 +197,9 @@ class Dict(Bencode[dict[str, BencodeAny]]):
     @property
     def name(self) -> str:
         return "Dict"
+
+    def __getitem__(self, index: str) -> BencodeAny:
+        return self.data[index]
 
     @property
     def data_type(self) -> Type[dict[str, BencodeAny]]:
@@ -199,7 +218,9 @@ class Dict(Bencode[dict[str, BencodeAny]]):
         if len(raw_bytes) < 2:
             raise NeedMoreBytesError
         if raw_bytes[:1] != const.DICT_START:
-            raise WrongBencodeFormatError(f"Dict.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"Dict.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
 
         raw_bytes = raw_bytes[1:]
         result: dict[str, BencodeAny] = {}
@@ -210,7 +231,9 @@ class Dict(Bencode[dict[str, BencodeAny]]):
         if len(raw_bytes) < 1:
             raise NeedMoreBytesError
         if raw_bytes[:1] != const.BENCODE_END:
-            raise WrongBencodeFormatError(f"Dict.from_bytes(): raw_bytes = {raw_bytes!r}")
+            raise WrongBencodeFormatError(
+                f"Dict.from_bytes(): raw_bytes = {raw_bytes!r}"
+            )
         return raw_bytes[1:], Dict(result)
 
     def _to_bytes(self) -> bytes:

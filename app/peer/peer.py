@@ -11,7 +11,6 @@ from asyncio import (
 from typing import Optional
 
 from app.const import MAX_CONCURRENT_REQUESTS, MY_ID, MessageType
-from app.exceptions import PeerCommunicationError
 from app.logging_config import get_logger
 from app.packets import (
     ExtendedPacket,
@@ -51,9 +50,15 @@ class Peer:  # noqa: WPS214
         self._in_flight = 0
         self._extension_enabled = extension_enabled
         self.closed: Event = Event()
+        self._unchoked: bool = False
+        self._extension_id: Optional[int] = None
 
     def __str__(self) -> str:
         return self._peername
+
+    @property
+    def extension_id(self) -> Optional[int]:
+        return self._extension_id
 
     async def handshake(self) -> str:
         reader, writer = await open_connection(self._ip, self._port)
@@ -73,12 +78,31 @@ class Peer:  # noqa: WPS214
         result = await self._read_handshake()
         if self._extension_enabled:
             self._extension_enabled = result.extension_enabled
+        if self._extension_enabled:
             await self._write(ExtendedPacket(payload=ExtendedPayload(1).to_bytes))
+            await self.get_ready(dirty=True)
         return result.peer_id
+
+    async def get_ready(self, dirty: bool = False) -> None:
+        while not self._is_ready():
+            peer_response = await self._read_peer()
+            if peer_response.message_type == MessageType.BITFIELD:
+                await self._write(PeerPacket(message_type=MessageType.INTERESTED))
+            elif peer_response.message_type == MessageType.UNCHOKE:
+                self._unchoked = True
+            elif isinstance(peer_response, ExtendedPacket):
+                self._extension_id = peer_response.parsed_payload.ut_metadata
+                if dirty:
+                    return
+            elif isinstance(peer_response, KeepAlivePacket):
+                continue
+            else:
+                logger.error(f"peer_response = {peer_response}")
+                raise NotImplementedError
 
     async def communicate(self, pieces: Pieces) -> None:  # noqa: WPS217
         await self.handshake()
-        await self._bitfield_unchoke()
+        await self.get_ready()
         logger.info(f"{self}: Unchoked")
         self.pieces = pieces
 
@@ -107,18 +131,6 @@ class Peer:  # noqa: WPS214
         if self._reader is None:
             raise NotImplementedError
         return await self._reader.read_peer()
-
-    async def _bitfield_unchoke(self) -> None:
-        peer_response = await self._read_peer()
-        if peer_response.message_type != MessageType.BITFIELD:
-            logger.error(f"peer_response = {peer_response}")
-            raise PeerCommunicationError
-        await self._write(PeerPacket(message_type=MessageType.INTERESTED))
-
-        peer_response = await self._read_peer()
-        if peer_response.message_type != MessageType.UNCHOKE:
-            logger.error(f"peer_response = {peer_response}")
-            raise PeerCommunicationError
 
     async def _write_from_queue(self, pieces: Pieces) -> None:
         request = await pieces.get_request_packet(self._peername)
@@ -168,3 +180,8 @@ class Peer:  # noqa: WPS214
             self.pieces.return_in_queue(peername=self._peername)
         self.read_task = create_task(self._read_peer(), name=f"{self} reader")
         self._tasks.add(self.read_task)
+
+    def _is_ready(self) -> bool:
+        if not self._extension_enabled:
+            return self._unchoked
+        return self._unchoked and self._extension_id is not None

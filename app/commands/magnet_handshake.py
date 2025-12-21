@@ -21,4 +21,6 @@ def print_magnet_peer_id(magnet: str) -> str:  # noqa: WPS210
         )
         peer_id = asyncio.run(peer.handshake())
         result.append(f"Peer ID: {peer_id}")
+        if peer.extension_id is not None:
+            result.append(f"Peer Metadata Extension ID: {peer.extension_id}")
     return "\n".join(result)
